@@ -41,7 +41,8 @@ public class ApiController {
   @GetMapping("/presentations")
   Object presentations() {
     return db.queryForList(
-        "SELECT pr.*,p.name AS product_name,p.sku,p.requires_rx,p.controlled FROM presentations pr"
+        "SELECT pr.*,p.name AS product_name,p.generic_name,p.sku,p.requires_rx,p.controlled FROM"
+            + " presentations pr"
             + " JOIN products p ON p.id=pr.product_id WHERE p.active=TRUE ORDER BY p.name,pr.factor"
             + " DESC");
   }
