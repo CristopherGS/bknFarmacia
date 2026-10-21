@@ -1,20 +1,44 @@
 # Backend en Coolify
 
-Repositorio `CristopherGS/bknFarmacia`, rama `main`, estrategia Dockerfile, archivo `/Dockerfile`, directorio base `/`, puerto interno 8080. No definir un comando de arranque que sustituya el de la imagen.
+Repositorio `CristopherGS/bknFarmacia`, rama `main`, estrategia Dockerfile, archivo `/Dockerfile`, directorio base `/`, puerto interno 8080. Los comandos de inicio, build e install se dejan vacíos: no definir un comando de arranque que sustituya el de la imagen.
 
-Variables de ejecución obligatorias:
+| Campo | Valor |
+|---|---|
+| Build pack | **Dockerfile** (no Railpack) |
+| Ports Exposes | `8080` |
+| Dominio | `http://bknmed.sglabs.lat` (con `http://`: Cloudflare pone el TLS) |
+| Custom network alias | `bkn-api` |
+| Healthcheck | HTTP GET, puerto 8080, ruta `/actuator/health/readiness`, estado 200, periodo de arranque 60 s |
+
+Variables de ejecución obligatorias (marcar solo **Runtime**, no Build):
 
 ```
 DATABASE_URL=jdbc:postgresql://aitoljax7dqzmdbgydq7nlsz:5432/farmacia
 DATABASE_USERNAME=<usuario>
 DATABASE_PASSWORD=<contraseña-del-servidor>
 BOOTSTRAP_ADMIN_PASSWORD=<contraseña-inicial-de-al-menos-14-caracteres>
+PORT=8080
 COOKIE_SECURE=true
 ```
 
-Los valores entre `<...>` se configuran en Coolify, no en Git. No reutilizar datos ni credenciales del desarrollo local. Mantener `SERVER_ADDRESS` sin definir o `0.0.0.0`, y `PORT=8080`; no copiar la vinculación local `127.0.0.1` al contenedor.
+Los valores entre `<...>` se configuran en Coolify, no en Git. No reutilizar datos ni credenciales del desarrollo local. Mantener `SERVER_ADDRESS` sin definir o `0.0.0.0`; no copiar la vinculación local `127.0.0.1` al contenedor.
 
-Healthcheck: HTTP al puerto 8080, ruta `/actuator/health/readiness`, estado 200. Incluye estado de arranque y conexión de base de datos. El dominio previsto es `https://bknmed.sglabs.lat`, pero frontend puede usar directamente el nombre interno de red en `API_UPSTREAM` y evitar desafíos interactivos de Cloudflare. PostgreSQL y las aplicaciones deben tener conectividad privada.
+Healthcheck: incluye estado de arranque y conexión de base de datos. El dominio es `http://bknmed.sglabs.lat`, pero el frontend usa el alias de red `bkn-api` en `API_UPSTREAM=http://bkn-api:8080` y así evita los desafíos interactivos de Cloudflare. PostgreSQL y las aplicaciones deben tener conectividad privada (red `coolify`).
+
+## Infraestructura SG Labs
+
+- Servidor: CT104 `sglabs-coolify`, IP interna `192.168.0.33` (panel de Coolify normalmente en `:8000`). Recursos: 4 cores, 6 GB de RAM y 2 GB de swap; con 2 cores / 4 GB las compilaciones de Angular y Maven eran muy lentas.
+- Ruta de tráfico: Cloudflare Tunnel (CT102, `*.sglabs.lat` → `http://192.168.0.33:80`) → Traefik (`coolify-proxy`) → contenedor.
+- Frontend: [frnFarmacia](https://github.com/CristopherGS/frnFarmacia/blob/main/COOLIFY.md), `http://med.sglabs.lat`, puerto 80.
+
+Comprobación directa contra el origen (salta Cloudflare):
+
+```sh
+curl -i -H 'Host: bknmed.sglabs.lat' http://192.168.0.33/actuator/health
+curl -i -H 'Host: med.sglabs.lat'    http://192.168.0.33/api/v1/auth/csrf   # JSON, no HTML
+```
+
+Si por HTTPS público aparece `403` con "Just a moment...", es una regla de Cloudflare (Security Events), no del servidor.
 
 La raíz `/` no es la interfaz web y puede responder 401: para comprobar disponibilidad usar `/actuator/health`. El usuario `admin` solo se crea si no hay usuarios; cambiar la variable inicial después no reemplaza la contraseña de una cuenta existente.
 
