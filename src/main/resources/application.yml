@@ -1,10 +1,13 @@
+
 spring:
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/farmacia}
     username: ${DATABASE_USERNAME:farmacia}
     password: ${DATABASE_PASSWORD}
+
   jackson:
     time-zone: America/Guatemala
+
 server:
   port: ${PORT:8080}
   servlet:
@@ -14,6 +17,7 @@ server:
         http-only: true
         same-site: strict
         secure: ${COOKIE_SECURE:true}
+
 management:
   endpoints:
     web:
@@ -22,6 +26,7 @@ management:
   endpoint:
     health:
       show-details: never
+
 app:
   bootstrap-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
   cash:
