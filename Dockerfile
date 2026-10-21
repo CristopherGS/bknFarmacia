@@ -1,8 +1,11 @@
 FROM maven:3.9-eclipse-temurin-21 AS build
+RUN useradd --create-home --uid 10001 builder
 WORKDIR /app
-COPY pom.xml .
+RUN chown builder:builder /app
+USER builder
+COPY --chown=builder:builder pom.xml .
 RUN mvn -B dependency:go-offline
-COPY src src
+COPY --chown=builder:builder src src
 RUN mvn -B verify
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
