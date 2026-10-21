@@ -42,7 +42,9 @@ Si por HTTPS público aparece `403` con "Just a moment...", es una regla de Clou
 
 La raíz `/` no es la interfaz web y puede responder 401: para comprobar disponibilidad usar `/actuator/health`. El usuario `admin` solo se crea si no hay usuarios; cambiar la variable inicial después no reemplaza la contraseña de una cuenta existente.
 
-El Dockerfile ejecuta la compilación y las pruebas como usuario sin privilegios: PostgreSQL temporal de las pruebas no permite ejecutarse como root. No se ha ejecutado una construcción Docker local ni desplegado este cambio en el servidor desde esta conversación.
+El Dockerfile compila sin ejecutar las pruebas: ya corren en GitHub Actions (`mvn -B verify`) y repetirlas en cada despliegue era la mayor parte del tiempo de build. Para ejecutarlas también en Coolify, definir la variable de **build** `RUN_TESTS=true`; corren como usuario sin privilegios porque PostgreSQL temporal no se ejecuta como root. Si GitHub Actions no está habilitado en el repositorio, conviene activar `RUN_TESTS=true` hasta habilitarlo.
+
+Las dependencias de Maven quedan en una caché de BuildKit (`--mount=type=cache`) que sobrevive entre despliegues aunque cambie `pom.xml`. No activar *Disable build cache* en Coolify, o cada build volverá a descargar unos 200 MB.
 
 ## Arranque y diagnóstico
 
@@ -52,7 +54,9 @@ Antes, un `ApplicationRunner` podía fallar después de iniciar Tomcat por falta
 
 `DATABASE_URL` y `DATABASE_USERNAME` ya no caen silenciosamente en localhost/usuario de desarrollo. Verificar las tres variables JDBC en ejecución y que el usuario pueda utilizar y crear objetos en el esquema. No imprimir ni publicar sus valores secretos. La raíz del backend puede devolver 401; comprobar salud en las rutas indicadas arriba.
 
-Validación local: `mvn verify` aprobó 22 pruebas, incluidas migraciones en PostgreSQL 18.6, arranque HTTP, login, cookies tras proxy HTTPS, fallo controlado sin secreto y reinicio sin restablecer administrador. Se comprobó además Nginx → backend con autenticación, consultas y cierre de sesión. El JDK local disponible fue 25 con destino 21; CI y Dockerfile usan Java 21. La imagen Docker queda por validar en CI/servidor, sin ejecutarse localmente.
+Validación local: `mvn verify` aprobó 22 pruebas, incluidas migraciones en PostgreSQL 18.6, arranque HTTP, login, cookies tras proxy HTTPS, fallo controlado sin secreto y reinicio sin restablecer administrador. Se comprobó además Nginx → backend con autenticación, consultas y cierre de sesión. El JDK local disponible fue 25 con destino 21; CI y Dockerfile usan Java 21.
+
+Validación de imágenes (21 de octubre de 2026, Docker 29 con BuildKit, 4 núcleos): ambas imágenes se construyeron y se probaron juntas con PostgreSQL 18 en una red privada, backend con alias `bkn-api` y frontend con `API_UPSTREAM=http://bkn-api:8080`. Readiness `UP` en 8 s, `/healthz`, CSRF en JSON, login y alta de producto a través de Nginx, sin reinicios. Tiempos de build del backend, antes y después de dejar las pruebas fuera de la imagen: en frío de 80 s a 30 s; con un cambio de código de 27 s a 6 s. En CT104 la diferencia debería ser mayor, porque las pruebas dependen de la CPU.
 
 Desde el frontend, ambos contenedores en la red `coolify`, comprobar `wget -qO- http://<alias-real-backend>:8080/actuator/health`. En el propio backend: `wget -qO- http://127.0.0.1:8080/actuator/health/readiness`. Revisar `docker logs --tail 150 <backend>` y `docker inspect --format '{{.State.Status}} reinicios={{.RestartCount}}' <backend>` en CT 104.
 
