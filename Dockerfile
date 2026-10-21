@@ -13,4 +13,5 @@ RUN addgroup -S farmacia && adduser -S farmacia -G farmacia
 COPY --from=build /app/target/farmacia-api-0.1.0.jar app.jar
 USER farmacia
 EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=3s --start-period=45s --retries=3 CMD wget -q -O /dev/null "http://127.0.0.1:${PORT:-8080}/actuator/health/readiness" || exit 1
 ENTRYPOINT ["java","-jar","app.jar"]

@@ -11,4 +11,9 @@ jobs:
           java-version: '21'
           cache: maven
       - run: mvn -B verify
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-test-results
+          path: target/surefire-reports/*.xml
       - run: docker build -t farmacia-api:check .

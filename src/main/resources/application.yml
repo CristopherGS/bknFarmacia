@@ -1,15 +1,17 @@
 
 spring:
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/farmacia}
-    username: ${DATABASE_USERNAME:farmacia}
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
     password: ${DATABASE_PASSWORD}
 
   jackson:
     time-zone: America/Guatemala
 
 server:
+  address: ${SERVER_ADDRESS:0.0.0.0}
   port: ${PORT:8080}
+  forward-headers-strategy: framework
   servlet:
     session:
       timeout: 30m
@@ -26,6 +28,11 @@ management:
   endpoint:
     health:
       show-details: never
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db
 
 app:
   bootstrap-password: ${BOOTSTRAP_ADMIN_PASSWORD:}

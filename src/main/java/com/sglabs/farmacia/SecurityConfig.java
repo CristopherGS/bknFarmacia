@@ -1,8 +1,6 @@
 package com.sglabs.farmacia;
 
 import java.util.*;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.*;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -50,7 +48,7 @@ public class SecurityConfig {
                             .CsrfTokenRequestAttributeHandler()))
         .authorizeHttpRequests(
             a ->
-                a.requestMatchers("/actuator/health", "/api/v1/auth/csrf")
+                a.requestMatchers("/actuator/health", "/actuator/health/**", "/api/v1/auth/csrf")
                     .permitAll()
                     .anyRequest()
                     .authenticated())
@@ -72,24 +70,5 @@ public class SecurityConfig {
                 e.authenticationEntryPoint((q, s, x) -> s.sendError(401))
                     .accessDeniedHandler((q, s, x) -> s.sendError(403)))
         .build();
-  }
-
-  @Bean
-  ApplicationRunner bootstrap(
-      JdbcTemplate db,
-      PasswordEncoder encoder,
-      @Value("${app.bootstrap-password}") String password) {
-    return args -> {
-      if (db.queryForObject("SELECT COUNT(*) FROM users", Integer.class) == 0) {
-        if (password.length() < 14)
-          throw new IllegalStateException(
-              "Configure BOOTSTRAP_ADMIN_PASSWORD con al menos 14 caracteres");
-        db.update(
-            "INSERT INTO users(username,password_hash,role,branch_id) VALUES (?,?,?,1)",
-            "admin",
-            encoder.encode(password),
-            "ADMIN");
-      }
-    };
   }
 }
