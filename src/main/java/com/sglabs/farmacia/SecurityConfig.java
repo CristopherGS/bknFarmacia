@@ -37,10 +37,13 @@ public class SecurityConfig {
   }
 
   @Bean
-  SecurityFilterChain security(HttpSecurity http) throws Exception {
+  SecurityFilterChain security(HttpSecurity http, JdbcTemplate db) throws Exception {
     var csrf = CookieCsrfTokenRepository.withHttpOnlyFalse();
     csrf.setCookieCustomizer(c -> c.sameSite("Strict").path("/"));
-    return http.csrf(
+    return http.addFilterAfter(
+            new ActiveUserFilter(db),
+            org.springframework.security.web.context.SecurityContextHolderFilter.class)
+        .csrf(
             c ->
                 c.csrfTokenRepository(csrf)
                     .csrfTokenRequestHandler(

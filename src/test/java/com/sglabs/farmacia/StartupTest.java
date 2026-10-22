@@ -89,7 +89,7 @@ class StartupTest {
       assertThat(
               db.queryForObject(
                   "SELECT COUNT(*) FROM flyway_schema_history WHERE success=TRUE", Integer.class))
-          .isEqualTo(3);
+          .isEqualTo(4);
       var encoder = context.getBean(PasswordEncoder.class);
       assertThat(
               encoder.matches(

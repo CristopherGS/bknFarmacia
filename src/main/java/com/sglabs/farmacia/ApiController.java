@@ -12,10 +12,13 @@ import org.springframework.web.bind.annotation.*;
 public class ApiController {
   final Operations op;
   final org.springframework.jdbc.core.JdbcTemplate db;
+  final Perm perm;
 
-  public ApiController(Operations op, org.springframework.jdbc.core.JdbcTemplate db) {
+  public ApiController(
+      Operations op, org.springframework.jdbc.core.JdbcTemplate db, Perm perm) {
     this.db = db;
     this.op = op;
+    this.perm = perm;
   }
 
   @GetMapping("/auth/csrf")
@@ -25,10 +28,13 @@ public class ApiController {
 
   @GetMapping("/auth/me")
   Object me(Principal p) {
-    return op.user(p.getName());
+    var me = new LinkedHashMap<>(op.user(p.getName()));
+    me.put("permissions", perm.of(p.getName()));
+    return me;
   }
 
   @GetMapping("/products")
+  @PreAuthorize("@perm.any('CATALOG_VIEW','POS_SELL','INVENTORY_VIEW','PURCHASES_RECEIVE')")
   Object products(Principal p) {
     return db.queryForList(
         "SELECT p.*,COALESCE((SELECT SUM(qty_base) FROM lots l WHERE l.product_id=p.id AND"
@@ -39,6 +45,7 @@ public class ApiController {
   }
 
   @GetMapping("/presentations")
+  @PreAuthorize("@perm.any('CATALOG_VIEW','POS_SELL','INVENTORY_VIEW','PURCHASES_RECEIVE')")
   Object presentations() {
     return db.queryForList(
         "SELECT pr.*,p.name AS product_name,p.generic_name,p.sku,p.requires_rx,p.controlled FROM"
@@ -48,19 +55,20 @@ public class ApiController {
   }
 
   @PostMapping("/products")
-  @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR')")
+  @PreAuthorize("@perm.has('CATALOG_MANAGE')")
   Object product(@Valid @RequestBody Operations.Product product, Principal p) {
     return Map.of("id", op.product(product, p.getName()));
   }
 
   @GetMapping("/suppliers")
+  @PreAuthorize("@perm.any('SUPPLIERS_VIEW','PURCHASES_RECEIVE')")
   Object suppliers() {
     return db.queryForList("SELECT * FROM suppliers ORDER BY name");
   }
 
   @PostMapping("/suppliers")
   @org.springframework.transaction.annotation.Transactional
-  @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','INVENTORY')")
+  @PreAuthorize("@perm.has('SUPPLIERS_MANAGE')")
   Object supplier(@Valid @RequestBody Operations.Supplier s, Principal p) {
     db.update(
         "INSERT INTO suppliers(name,nit,contact,lead_days) VALUES (?,?,?,?)",
@@ -73,13 +81,13 @@ public class ApiController {
   }
 
   @PostMapping("/receipts")
-  @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','INVENTORY')")
+  @PreAuthorize("@perm.has('PURCHASES_RECEIVE')")
   Object receive(@Valid @RequestBody Operations.Receipt r, Principal p) {
     return Map.of("id", op.receive(r, p.getName()));
   }
 
   @GetMapping("/receipts")
-  @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','INVENTORY','ACCOUNTANT')")
+  @PreAuthorize("@perm.has('PURCHASES_VIEW')")
   Object receipts(Principal p) {
     return db.queryForList(
         "SELECT r.*,s.name AS supplier FROM receipts r JOIN suppliers s ON s.id=r.supplier_id WHERE"
@@ -88,15 +96,20 @@ public class ApiController {
   }
 
   @GetMapping("/inventory")
+  @PreAuthorize("@perm.has('INVENTORY_VIEW')")
   Object inventory(Principal p) {
-    return db.queryForList(
+    var lots =
+        db.queryForList(
         "SELECT l.*,p.name AS product_name,p.base_unit FROM lots l JOIN products p ON"
             + " p.id=l.product_id WHERE l.branch_id=? ORDER BY l.expires_on,l.id",
-        op.branch(p.getName()));
+            op.branch(p.getName()));
+    // Los costos de compra solo los ve quien tiene COSTS_VIEW.
+    if (!perm.has("COSTS_VIEW")) lots.forEach(l -> l.remove("unit_cost"));
+    return lots;
   }
 
   @GetMapping("/movements")
-  @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','INVENTORY','ACCOUNTANT')")
+  @PreAuthorize("@perm.has('INVENTORY_VIEW')")
   Object movements(Principal p) {
     return db.queryForList(
         "SELECT m.*,l.code,p.name AS product_name FROM stock_movements m JOIN lots l ON"
@@ -106,7 +119,7 @@ public class ApiController {
   }
 
   @PostMapping("/sales/checkout")
-  @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','CASHIER')")
+  @PreAuthorize("@perm.has('POS_SELL')")
   Object checkout(
       @Valid @RequestBody Operations.Checkout c,
       @RequestHeader("Idempotency-Key") String key,
@@ -115,18 +128,21 @@ public class ApiController {
   }
 
   @GetMapping("/sales")
-  @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','CASHIER','ACCOUNTANT')")
+  @PreAuthorize("@perm.has('SALES_VIEW')")
   Object sales(Principal p) {
     return db.queryForList(
         "SELECT * FROM sales WHERE branch_id=? ORDER BY id DESC LIMIT 200", op.branch(p.getName()));
   }
 
   @GetMapping("/sales/{id}")
-  @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','CASHIER','ACCOUNTANT')")
+  @PreAuthorize("@perm.any('SALES_VIEW','POS_SELL')")
   Object sale(@PathVariable long id, Principal p) {
     var sale =
         db.queryForMap(
             "SELECT * FROM sales WHERE id=? AND branch_id=?", id, op.branch(p.getName()));
+    // Quien solo vende puede ver sus propios comprobantes, no el historial de otros.
+    if (!perm.has("SALES_VIEW") && !p.getName().equals(sale.get("actor")))
+      throw new org.springframework.dao.EmptyResultDataAccessException(1);
     return Map.of(
         "sale",
         sale,
@@ -137,7 +153,7 @@ public class ApiController {
   }
 
   @GetMapping("/cash")
-  @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','CASHIER','ACCOUNTANT')")
+  @PreAuthorize("@perm.any('CASH_VIEW','CASH_MANAGE','POS_SELL')")
   Object cash(Principal p) {
     if (op.cashAutomationEnabled()) {
       op.synchronizeCash(p.getName());
@@ -165,19 +181,19 @@ public class ApiController {
   }
 
   @PostMapping("/cash/open")
-  @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','CASHIER')")
+  @PreAuthorize("@perm.has('CASH_MANAGE')")
   Object open(@Valid @RequestBody Operations.CashAmount c, Principal p) {
     return Map.of("id", op.open(c.amount(), p.getName()));
   }
 
   @PostMapping("/cash/close")
-  @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','CASHIER')")
+  @PreAuthorize("@perm.has('CASH_MANAGE')")
   Object close(@Valid @RequestBody Operations.CashAmount c, Principal p) {
     return op.close(c.amount(), p.getName());
   }
 
   @GetMapping("/audit")
-  @PreAuthorize("hasAnyRole('ADMIN','SUPERVISOR','ACCOUNTANT')")
+  @PreAuthorize("@perm.has('AUDIT_VIEW')")
   Object audit(Principal p) {
     return db.queryForList(
         "SELECT * FROM audit_logs WHERE branch_id=? ORDER BY id DESC LIMIT 500",
