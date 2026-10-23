@@ -34,6 +34,8 @@ public class ApiController {
     me.put("permissions", perm.of(p.getName()));
     // Módulos activos: la pantalla muestra u oculta funciones (por ejemplo, recetas) según ellos.
     me.put("modules", Modules.normalize(settings.get().modules()));
+    // Funciones que solo existen para algunas personas (hoy: el portafolio personal del dueño).
+    me.put("features", Map.of("invest", perm.investOwner()));
     return me;
   }
 

@@ -45,6 +45,16 @@ app:
   business:
     name: ${BUSINESS_NAME:}
     type: ${BUSINESS_TYPE:}
+  # Portafolio personal de ETFs: solo se activa si INVEST_OWNER es tu usuario administrador.
+  # Las llaves son opcionales; sin ellas se usan las fuentes públicas sin llave.
+  invest:
+    owner: ${INVEST_OWNER:}
+    fred-key: ${FRED_API_KEY:}
+    finnhub-token: ${FINNHUB_TOKEN:}
+    twelvedata-key: ${TWELVEDATA_KEY:}
+    telegram-token: ${TELEGRAM_BOT_TOKEN:}
+    telegram-chat: ${TELEGRAM_CHAT_ID:}
+    cron: ${INVEST_CRON:0 30 22 * * MON-FRI}
   outbox:
     interval-ms: ${OUTBOX_INTERVAL_MS:5000}
     backoff-seconds: ${OUTBOX_BACKOFF_SECONDS:10}
