@@ -37,7 +37,7 @@ public class SecurityConfig {
   }
 
   @Bean
-  SecurityFilterChain security(HttpSecurity http, JdbcTemplate db) throws Exception {
+  SecurityFilterChain security(HttpSecurity http, JdbcTemplate db, Perm perm) throws Exception {
     var csrf = CookieCsrfTokenRepository.withHttpOnlyFalse();
     csrf.setCookieCustomizer(c -> c.sameSite("Strict").path("/"));
     return http.addFilterAfter(
@@ -64,6 +64,13 @@ public class SecurityConfig {
                         // autentica con llave de API (sin sesión) vería 401 en lugar del 403 real.
                         "/error")
                     .permitAll()
+                    // El portafolio personal se cierra desde la URL, antes de leer el cuerpo: quien no
+                    // es el dueño recibe 403 aunque mande datos inválidos.
+                    .requestMatchers("/api/v1/invest/**")
+                    .access(
+                        (auth, ctx) ->
+                            new org.springframework.security.authorization.AuthorizationDecision(
+                                auth.get().isAuthenticated() && perm.investOwner()))
                     .anyRequest()
                     .authenticated())
         .formLogin(

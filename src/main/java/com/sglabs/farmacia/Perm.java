@@ -16,10 +16,30 @@ import org.springframework.stereotype.Component;
 public class Perm {
   private final JdbcTemplate db;
   private final Settings settings;
+  private final String investOwner;
 
-  public Perm(JdbcTemplate db, Settings settings) {
+  public Perm(
+      JdbcTemplate db,
+      Settings settings,
+      @org.springframework.beans.factory.annotation.Value("${app.invest.owner:}") String investOwner) {
     this.db = db;
     this.settings = settings;
+    this.investOwner = investOwner == null ? "" : investOwner.trim();
+  }
+
+  /**
+   * El apartado de inversiones personales es solo del dueño: debe estar configurada la variable
+   * INVEST_OWNER, coincidir con tu usuario, y ser administrador activo. Sin la variable, nadie entra.
+   */
+  public boolean investOwner() {
+    String name = current();
+    return !investOwner.isEmpty()
+        && investOwner.equals(name)
+        && Boolean.TRUE.equals(
+            db.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE username=? AND active AND role='ADMIN')",
+                Boolean.class,
+                name));
   }
 
   public boolean has(String key) {
