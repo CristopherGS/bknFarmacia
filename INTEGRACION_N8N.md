@@ -65,6 +65,9 @@ Si n8n no responde con un código 2xx en 8 segundos, el sistema reintenta con es
 | `lot.expiring` | Cada día a las 07:00 (hora de Guatemala): lotes que entraron en la ventana de 90 o de 30 días | `thresholdDays`, `lots[]` (producto, lote, `expiresOn`, `daysLeft`, `units`) |
 | `cash.closed` | Se cierra una caja, manual o automática | `sessionId`, `mode`, `opening`, `expected`, y en cierre manual `counted`, `difference` |
 | `user.access_changed` | Se crea un usuario, se cambian sus permisos o rol, o se activa o desactiva | `username`, `actor`, `change`, `role`, `added[]`, `removed[]`, `active` |
+| `invoice.uploaded` | Alguien sube la foto o el PDF de una factura | `draftId`, `filename`, `contentType`, `sizeBytes`, `uploadedBy`, `filePath`, `extractionPath` |
+| `invoice.ready` | n8n devolvió la lectura de una factura | `draftId`, `lines`, `matched`, `supplierMatched` |
+| `invoice.failed` | n8n informó que no pudo leer la factura | `draftId`, `error` |
 | `test.ping` | Botón **Enviar prueba** | `message` |
 
 Cada lote por vencer se avisa una vez por umbral, no todos los días.
@@ -79,7 +82,58 @@ Una llave solo puede lo que se le dio: sin el permiso, el sistema responde `403`
 
 Consultas útiles: `GET /api/v1/sales` (últimas 200 ventas), `GET /api/v1/products` (incluye `stock`), `GET /api/v1/inventory`, `GET /api/v1/cash`, `GET /api/v1/receipts`.
 
-## 4. Ideas de flujos
+## 4. Leer facturas de proveedores
+
+La persona sube la foto o el PDF en **Compras → Subir factura**; n8n la lee; el sistema cruza lo leído con tu catálogo y deja un **borrador** que una persona revisa en «Recibir compra» y confirma. **Nada entra al inventario hasta esa confirmación.**
+
+El motor de lectura vive en n8n: puedes usar un modelo con visión, un servicio de OCR o el que prefieras, con tus propias credenciales. El sistema no guarda llaves de ningún motor.
+
+### Preparación (una vez)
+
+1. Conecta n8n como en la sección 1. Sin webhook configurado, **Subir factura** responde que falta conectar n8n.
+2. Crea una **llave de API** con **solo** el permiso *Cargar facturas para leerlas automáticamente*. Esa llave puede descargar facturas y devolver lecturas, pero **no** puede registrar compras ni ver inventario.
+3. Da el permiso *Cargar facturas* a quienes suben facturas (el rol Inventario y Supervisor ya lo tienen). Confirmar sigue requiriendo *Registrar compras*.
+
+### El flujo en n8n
+
+1. **Webhook** (Raw Body) → verifica la firma como en la sección 1 → continúa solo si `type` es `invoice.uploaded`.
+2. **HTTP Request** `GET https://<tu-dominio>` + `data.filePath`, con `Authorization: Bearer sgk_...`, y respuesta como **archivo**. Devuelve la imagen o el PDF (JPG, PNG, WEBP o PDF, hasta 8 MB).
+3. **Nodo de lectura** (modelo con visión u OCR): envía el archivo con las instrucciones de abajo y pide la respuesta como JSON.
+4. **HTTP Request** `PUT https://<tu-dominio>` + `data.extractionPath`, con la misma llave y el cuerpo JSON de abajo.
+5. Si la lectura falla, envía `{"error": "motivo corto"}` en lugar de las líneas: la factura queda marcada como «No se pudo leer» y se puede volver a enviar.
+6. Opcional: con `invoice.ready` puedes avisar por WhatsApp o Telegram que la factura está lista para revisar.
+
+### Cuerpo de la lectura (`PUT .../extraction`)
+
+```json
+{
+  "supplierName": "DISTRIBUIDORA CENTRAL, S.A.",
+  "supplierNit": "1234567-8",
+  "document": "FAC-A-2041",
+  "lines": [
+    { "description": "ACETAMINOFEN 500MG TAB CAJA X100", "barcode": "7400000000011", "sku": "",
+      "quantity": 3, "lot": "ACE-2210", "expiresOn": "2029-03-31", "totalCost": 135.50 }
+  ]
+}
+```
+
+Solo `description` es obligatoria en cada línea. Lo que no se lea se deja fuera o en blanco: la persona lo completa al revisar. Las fechas van como `AAAA-MM-DD` (una fecha en otro formato se ignora) y los números con punto decimal, sin símbolo de moneda ni separador de miles.
+
+### Instrucciones sugeridas para el modelo de lectura
+
+> Eres un lector de facturas de proveedores de una farmacia. Devuelve **solo** un objeto JSON con las claves `supplierName`, `supplierNit`, `document` y `lines`. Cada línea de producto lleva `description` (el texto tal como aparece en la factura), `quantity` (número de unidades o cajas facturadas, como número), `totalCost` (importe total de esa línea, como número con punto decimal), y, solo si aparecen impresos, `barcode`, `sku`, `lot` y `expiresOn` (AAAA-MM-DD). No inventes datos: si algo no se ve, omítelo. No incluyas líneas que no sean productos (fletes, descuentos, impuestos, totales). Si la imagen no es una factura legible, responde `{"error": "motivo corto"}`.
+
+### Cómo se cruza con tu catálogo
+
+Para cada línea, en este orden: **código de barras** exacto → **SKU** → **parecido del nombre** (ignora tildes y mayúsculas, y separa «500MG» en «500 mg»). Si dos productos puntúan casi igual, o ninguno se parece lo suficiente, la línea queda **sin cruzar** y la persona elige el producto: es preferible a ingresar existencias en el equivocado. El proveedor se cruza por NIT o por un nombre muy parecido.
+
+En la pantalla de revisión las líneas dudosas se marcan en ámbar y cada una muestra el texto original de la factura junto a la imagen. La cantidad se interpreta como **presentaciones** (cajas), no unidades sueltas: conviene verificarlo en la primera factura de cada proveedor.
+
+### Privacidad y límites
+
+Las imágenes se guardan en la base del sistema y se borran a los 30 días de que la factura se confirma o se descarta (el borrador y su historial se conservan). Se admiten hasta 50 facturas sin revisar por sucursal. La lectura solo sale de tu servidor si tu flujo de n8n la envía a un servicio externo: esa decisión es tuya.
+
+## 5. Ideas de flujos
 
 - **Stock bajo → Telegram o WhatsApp.** Webhook (`stock.low`) → verificar firma → mensaje: «⚠️ {{product}}: quedan {{stock}} (mínimo {{minimum}})».
 - **Vencimientos → correo al encargado.** Webhook (`lot.expiring`) → agrupar `lots` en una tabla → enviar por correo.
@@ -89,7 +143,7 @@ Consultas útiles: `GET /api/v1/sales` (últimas 200 ventas), `GET /api/v1/produ
 - **Reposición asistida.** `stock.low` → buscar al proveedor → armar un borrador de pedido → que una persona lo apruebe antes de enviarlo.
 - **Alta de un cliente nuevo.** n8n crea un stack por cliente en Coolify con `BUSINESS_NAME` y `BUSINESS_TYPE` (ver abajo), el dominio y el correo de bienvenida.
 
-## 5. Un negocio nuevo ya configurado
+## 6. Un negocio nuevo ya configurado
 
 Al crear la base por primera vez se leen dos variables de entorno (después se cambian desde Configuración):
 

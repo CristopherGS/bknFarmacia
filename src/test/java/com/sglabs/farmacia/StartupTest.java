@@ -66,6 +66,13 @@ class StartupTest {
             "--spring.main.banner-mode=off");
   }
 
+  /** Cuántas migraciones trae la aplicación; así la prueba no se rompe cada vez que se agrega una. */
+  static int migrationFiles() throws Exception {
+    return new org.springframework.core.io.support.PathMatchingResourcePatternResolver()
+        .getResources("classpath:db/migration/V*.sql")
+        .length;
+  }
+
   @Test
   void missingInitialPasswordFailsBeforeWebServerAcceptsTraffic(CapturedOutput output)
       throws Exception {
@@ -89,7 +96,7 @@ class StartupTest {
       assertThat(
               db.queryForObject(
                   "SELECT COUNT(*) FROM flyway_schema_history WHERE success=TRUE", Integer.class))
-          .isEqualTo(5);
+          .isEqualTo(migrationFiles());
       var encoder = context.getBean(PasswordEncoder.class);
       assertThat(
               encoder.matches(

@@ -31,6 +31,19 @@ public class EventJobs {
     } catch (RuntimeException e) {
       LOG.error("No se pudo revisar los vencimientos", e);
     }
+    try {
+      purgeOldInvoiceFiles();
+    } catch (RuntimeException e) {
+      LOG.error("No se pudo limpiar los archivos de facturas", e);
+    }
+  }
+
+  /** Las imágenes de facturas ya cerradas se borran a los 30 días; el borrador y su historial quedan. */
+  public int purgeOldInvoiceFiles() {
+    return db.update(
+        "DELETE FROM invoice_files WHERE draft_id IN (SELECT id FROM receipt_drafts WHERE status IN"
+            + " ('CONFIRMED','DISCARDED','FAILED') AND updated_at < CURRENT_TIMESTAMP - interval '30"
+            + " days')");
   }
 
   /**

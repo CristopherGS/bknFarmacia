@@ -34,6 +34,11 @@ public class ApiError {
         .body(Map.of("message", "Registro duplicado o referencia inválida. Revise los datos."));
   }
 
+  @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+  ResponseEntity<?> tooLarge() {
+    return ResponseEntity.status(413).body(Map.of("message", "La factura supera 8 MB."));
+  }
+
   @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class)
   ResponseEntity<?> validation() {
     return ResponseEntity.badRequest()
