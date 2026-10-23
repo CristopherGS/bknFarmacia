@@ -13,12 +13,14 @@ public class ApiController {
   final Operations op;
   final org.springframework.jdbc.core.JdbcTemplate db;
   final Perm perm;
+  final Settings settings;
 
   public ApiController(
-      Operations op, org.springframework.jdbc.core.JdbcTemplate db, Perm perm) {
+      Operations op, org.springframework.jdbc.core.JdbcTemplate db, Perm perm, Settings settings) {
     this.db = db;
     this.op = op;
     this.perm = perm;
+    this.settings = settings;
   }
 
   @GetMapping("/auth/csrf")
@@ -30,6 +32,8 @@ public class ApiController {
   Object me(Principal p) {
     var me = new LinkedHashMap<>(op.user(p.getName()));
     me.put("permissions", perm.of(p.getName()));
+    // Módulos activos: la pantalla muestra u oculta funciones (por ejemplo, recetas) según ellos.
+    me.put("modules", Modules.normalize(settings.get().modules()));
     return me;
   }
 

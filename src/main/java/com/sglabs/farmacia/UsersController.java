@@ -16,12 +16,26 @@ public class UsersController {
   final Operations op;
   final org.springframework.jdbc.core.JdbcTemplate db;
   final PasswordEncoder encoder;
+  final Settings settings;
+  final Events events;
 
   UsersController(
-      Operations op, PasswordEncoder encoder, org.springframework.jdbc.core.JdbcTemplate db) {
+      Operations op,
+      PasswordEncoder encoder,
+      org.springframework.jdbc.core.JdbcTemplate db,
+      Settings settings,
+      Events events) {
     this.db = db;
     this.op = op;
     this.encoder = encoder;
+    this.settings = settings;
+    this.events = events;
+  }
+
+  /** Permisos que hoy se pueden usar: los de un módulo apagado no se ofrecen ni se cuentan. */
+  private java.util.function.Predicate<String> usable() {
+    var modules = settings.get().modules();
+    return k -> Permissions.moduleOf(k) == null || modules.contains(Permissions.moduleOf(k));
   }
 
   record NewUser(
@@ -41,8 +55,21 @@ public class UsersController {
   @GetMapping("/permissions")
   @PreAuthorize("@perm.admin()")
   Object catalog() {
+    var usable = usable();
+    var roles = new LinkedHashMap<String, List<String>>();
+    Permissions.presets().forEach((r, keys) -> roles.put(r, keys.stream().filter(usable).toList()));
+    var implies = new LinkedHashMap<String, List<String>>();
+    Permissions.IMPLIES.forEach(
+        (k, needs) -> {
+          if (usable.test(k)) implies.put(k, needs.stream().filter(usable).toList());
+        });
     return Map.of(
-        "permissions", Permissions.ALL, "roles", Permissions.presets(), "implies", Permissions.IMPLIES);
+        "permissions",
+        Permissions.ALL.stream().filter(d -> usable.test(d.key())).toList(),
+        "roles",
+        roles,
+        "implies",
+        implies);
   }
 
   @GetMapping
@@ -60,15 +87,18 @@ public class UsersController {
         op.branch(p.getName()));
     var users =
         db.queryForList(
-            "SELECT id,username,role,active FROM users WHERE branch_id=? ORDER BY username",
+            "SELECT id,username,role,active FROM users WHERE branch_id=? AND role<>'SERVICE' ORDER BY"
+                + " username",
             op.branch(p.getName()));
     for (var u : users) {
       long id = ((Number) u.get("id")).longValue();
       u.put(
           "permissions",
           "ADMIN".equals(u.get("role"))
-              ? List.copyOf(Permissions.KEYS)
-              : Permissions.normalize(granted.getOrDefault(id, List.of())));
+              ? Permissions.KEYS.stream().filter(usable()).toList()
+              : Permissions.normalize(granted.getOrDefault(id, List.of())).stream()
+                  .filter(usable())
+                  .toList());
     }
     return users;
   }
@@ -96,6 +126,15 @@ public class UsersController {
     for (String k : permissions)
       if (!u.role().equals("ADMIN"))
         op.audit(branch, p.getName(), "PERMISSION_GRANTED", u.username() + ":" + k);
+    events.emit(
+        "user.access_changed",
+        id,
+        Map.of(
+            "username", u.username(),
+            "actor", p.getName(),
+            "change", "CREATED",
+            "role", u.role(),
+            "permissions", u.role().equals("ADMIN") ? List.copyOf(Permissions.KEYS) : permissions));
     return Map.of("ok", true, "id", id);
   }
 
@@ -137,16 +176,30 @@ public class UsersController {
       op.audit(branch, p.getName(), "USER_ROLE_CHANGED", name + ":" + role);
     if (active != wasActive)
       op.audit(branch, p.getName(), active ? "USER_ACTIVATED" : "USER_DEACTIVATED", name);
+    List<String> added = List.of();
+    List<String> removed = List.of();
     if (role.equals("ADMIN")) {
       db.update("DELETE FROM user_permissions WHERE user_id=?", id);
     } else {
-      var added = wanted.stream().filter(k -> !current.contains(k)).toList();
-      var removed = current.stream().filter(k -> !wanted.contains(k)).toList();
+      added = wanted.stream().filter(k -> !current.contains(k)).toList();
+      removed = current.stream().filter(k -> !wanted.contains(k)).toList();
       db.update("DELETE FROM user_permissions WHERE user_id=?", id);
       grant(id, wanted);
       for (String k : added) op.audit(branch, p.getName(), "PERMISSION_GRANTED", name + ":" + k);
       for (String k : removed) op.audit(branch, p.getName(), "PERMISSION_REVOKED", name + ":" + k);
     }
+    if (!role.equals(oldRole) || active != wasActive || !added.isEmpty() || !removed.isEmpty())
+      events.emit(
+          "user.access_changed",
+          id,
+          Map.of(
+              "username", name,
+              "actor", p.getName(),
+              "change", "UPDATED",
+              "role", role,
+              "active", active,
+              "added", added,
+              "removed", removed));
     return Map.of("ok", true);
   }
 

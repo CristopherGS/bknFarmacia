@@ -63,3 +63,14 @@ Desde el frontend, ambos contenedores en la red `coolify`, comprobar `wget -qO- 
 Informe conjunto, configuración de frontend, consultas SQL y comandos de Traefik/Tunnel: [DIAGNOSTICO_DESPLIEGUE.md](https://github.com/CristopherGS/frnFarmacia/blob/main/DIAGNOSTICO_DESPLIEGUE.md). En esta revisión, el origen `192.168.0.33` devolvió 502 para ambos dominios y Cloudflare devolvió 403 con desafío. Producción permanece pendiente de comprobación después del despliegue; no se modificó su infraestructura.
 
 En una repetición posterior, el origen cambió a 403 de Angular por host no permitido en frontend y 404 en backend. Se añadió `med.sglabs.lat` a los hosts permitidos de desarrollo en el frontend; el backend necesita revisar también su enrutamiento en Coolify. GitHub Actions no devolvió ejecuciones registradas al consultar ambos repositorios después de subir los cambios: la validación de la imagen Linux sigue pendiente.
+
+## Variables opcionales de negocio y n8n
+
+| Variable | Efecto |
+|---|---|
+| `BUSINESS_NAME` | Nombre del negocio al crear la base por primera vez; después se cambia en Configuración. |
+| `BUSINESS_TYPE` | `FARMACIA`, `TIENDA` u `OTRO`: aplica la plantilla de módulos al crear la base. |
+| `OUTBOX_INTERVAL_MS` | Cada cuánto se revisa la cola de eventos hacia n8n (5000 por defecto). |
+| `OUTBOX_BACKOFF_SECONDS` | Primera espera tras un envío fallido; se duplica en cada reintento (10 por defecto). |
+
+La URL del webhook de n8n, su secreto y las llaves de API se configuran desde la pantalla de Configuración, no por variables. Ver [INTEGRACION_N8N.md](INTEGRACION_N8N.md).

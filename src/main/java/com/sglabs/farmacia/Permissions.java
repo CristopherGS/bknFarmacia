@@ -74,7 +74,16 @@ public final class Permissions {
           "CASH_MANAGE", List.of("CASH_VIEW"),
           "COSTS_VIEW", List.of("INVENTORY_VIEW"));
 
+  /** Permisos que pertenecen a un módulo opcional: valen solo mientras el módulo esté activo. */
+  private static final Map<String, String> MODULE_OF =
+      Map.of("CASH_VIEW", "CASH", "CASH_MANAGE", "CASH", "AUDIT_VIEW", "AUDIT");
+
   private Permissions() {}
+
+  /** Módulo opcional del que depende el permiso, o null si es parte del flujo base. */
+  public static String moduleOf(String key) {
+    return MODULE_OF.get(key);
+  }
 
   /** Permisos que recibe un usuario nuevo con ese rol si el administrador no los personaliza. */
   public static List<String> preset(String role) {

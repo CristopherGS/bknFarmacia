@@ -15,10 +15,24 @@ public class Operations {
   final CashAutomation cashAutomation;
   final Clock clock;
 
+  Settings settings;
+  Events events;
+
   public Operations(JdbcTemplate db, CashAutomation cashAutomation, Clock clock) {
     this.db = db;
     this.cashAutomation = cashAutomation;
     this.clock = clock;
+  }
+
+  /** Spring los inyecta; sin ellos (pruebas con instancias manuales) no hay módulos ni eventos. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  void collaborators(Settings settings, Events events) {
+    this.settings = settings;
+    this.events = events;
+  }
+
+  private void emit(String type, long aggregateId, Map<String, ?> data) {
+    if (events != null) events.emit(type, aggregateId, data);
   }
 
   public record Product(
@@ -172,6 +186,24 @@ public class Operations {
           "Recepción " + r.document());
     }
     audit(b, actor, "RECEIPT_CREATED", "" + receipt);
+    if (events != null && events.enabled()) {
+      var lines =
+          db.queryForList(
+              "SELECT p.name AS product,l.code AS lot,l.expires_on AS expires_on,l.qty_base AS units"
+                  + " FROM lots l JOIN products p ON p.id=l.product_id WHERE l.receipt_id=? ORDER BY"
+                  + " l.id",
+              receipt);
+      for (var line : lines) line.put("expires_on", line.get("expires_on").toString());
+      emit(
+          "receipt.created",
+          receipt,
+          Map.of(
+              "receiptId", receipt,
+              "document", r.document().trim(),
+              "supplierId", r.supplierId(),
+              "actor", actor,
+              "lines", lines));
+    }
     return receipt;
   }
 
@@ -181,6 +213,7 @@ public class Operations {
       throw new IllegalArgumentException(
           "Se requiere Idempotency-Key estable (16 a 80 caracteres)");
     long b = branch(actor);
+    boolean rx = settings == null || settings.module("RX");
     // Serialize checkout and closure per branch. Re-read all balances after the lock.
     db.queryForMap("SELECT id FROM branches WHERE id=? FOR UPDATE", b);
     String hash;
@@ -227,7 +260,7 @@ public class Operations {
               line.presentationId());
       if (Boolean.TRUE.equals(p.get("controlled")))
         throw new IllegalStateException("Venta de controlados no habilitada");
-      if (Boolean.TRUE.equals(p.get("requires_rx")) && !c.prescriptionChecked())
+      if (rx && Boolean.TRUE.equals(p.get("requires_rx")) && !c.prescriptionChecked())
         throw new IllegalArgumentException("Confirme la revisión de receta");
       if (Boolean.TRUE.equals(p.get("fractional"))
           && !Boolean.TRUE.equals(p.get("allow_fractional")))
@@ -256,10 +289,12 @@ public class Operations {
         c.tendered(),
         c.tendered().subtract(total));
     long sale = id();
+    var takenByProduct = new LinkedHashMap<Long, Long>();
     for (int i = 0; i < items.size(); i++) {
       var p = items.get(i);
       var line = c.lines().get(i);
       long remaining = Math.multiplyExact(line.quantity(), ((Number) p.get("factor")).longValue());
+      takenByProduct.merge(((Number) p.get("product_id")).longValue(), remaining, Long::sum);
       db.update(
           "INSERT INTO"
               + " sale_lines(sale_id,presentation_id,product_name,presentation_name,quantity,factor,price)"
@@ -303,9 +338,54 @@ public class Operations {
         throw new IllegalStateException("Stock insuficiente: " + p.get("product_name"));
     }
     audit(b, actor, "SALE_COMPLETED", "" + sale);
-    db.update(
-        "INSERT INTO outbox_events(event_type,aggregate_id) VALUES ('sale.completed',?)", sale);
+    if (events != null && events.enabled()) {
+      var lines = new ArrayList<Map<String, Object>>();
+      for (int i = 0; i < items.size(); i++) {
+        var line = new LinkedHashMap<String, Object>();
+        line.put("product", items.get(i).get("product_name"));
+        line.put("presentation", items.get(i).get("name"));
+        line.put("quantity", c.lines().get(i).quantity());
+        line.put("price", items.get(i).get("price"));
+        lines.add(line);
+      }
+      var data = new LinkedHashMap<String, Object>();
+      data.put("saleId", sale);
+      data.put("total", total);
+      data.put("method", c.method());
+      data.put("tendered", c.tendered());
+      data.put("change", c.tendered().subtract(total));
+      data.put("actor", actor);
+      data.put("lines", lines);
+      emit("sale.completed", sale, data);
+      emitLowStock(b, takenByProduct);
+    }
     return db.queryForMap("SELECT * FROM sales WHERE id=?", sale);
+  }
+
+  /** Avisa una sola vez cuando una venta hace que un producto llegue o baje de su mínimo. */
+  private void emitLowStock(long branch, Map<Long, Long> takenByProduct) {
+    var today = LocalDate.now(ZoneId.of("America/Guatemala"));
+    for (var e : takenByProduct.entrySet()) {
+      var p = db.queryForMap("SELECT name,sku,minimum_stock FROM products WHERE id=?", e.getKey());
+      long min = ((Number) p.get("minimum_stock")).longValue();
+      long after =
+          db.queryForObject(
+              "SELECT COALESCE(SUM(qty_base),0) FROM lots WHERE branch_id=? AND product_id=? AND"
+                  + " state='AVAILABLE' AND expires_on>?",
+              Long.class,
+              branch,
+              e.getKey(),
+              today);
+      if (after + e.getValue() > min && after <= min) {
+        var data = new LinkedHashMap<String, Object>();
+        data.put("productId", e.getKey());
+        data.put("product", p.get("name"));
+        data.put("sku", p.get("sku"));
+        data.put("stock", after);
+        data.put("minimum", min);
+        emit("stock.low", e.getKey(), data);
+      }
+    }
   }
 
   @Transactional
@@ -349,6 +429,19 @@ public class Operations {
         amount.subtract(expected),
         id);
     audit(b, actor, "CASH_CLOSED", "" + id);
-    return db.queryForMap("SELECT * FROM cash_sessions WHERE id=?", id);
+    var closed = db.queryForMap("SELECT * FROM cash_sessions WHERE id=?", id);
+    if (events != null && events.enabled())
+      emit(
+          "cash.closed",
+          id,
+          Map.of(
+              "sessionId", id,
+              "mode", "MANUAL",
+              "actor", actor,
+              "opening", closed.get("opening"),
+              "expected", closed.get("expected"),
+              "counted", closed.get("counted"),
+              "difference", closed.get("difference")));
+    return closed;
   }
 }

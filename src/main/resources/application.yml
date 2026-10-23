@@ -36,6 +36,13 @@ management:
 
 app:
   bootstrap-password: ${BOOTSTRAP_ADMIN_PASSWORD:}
+  # Solo se aplican al crear la base por primera vez; después se cambian desde Configuración.
+  business:
+    name: ${BUSINESS_NAME:}
+    type: ${BUSINESS_TYPE:}
+  outbox:
+    interval-ms: ${OUTBOX_INTERVAL_MS:5000}
+    backoff-seconds: ${OUTBOX_BACKOFF_SECONDS:10}
   cash:
     automatic: ${CASH_AUTOMATIC:true}
     opening-amount: ${CASH_OPENING_AMOUNT:0.00}

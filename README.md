@@ -56,3 +56,9 @@ El administrador decide qué puede ver y hacer cada persona. El rol es solo una 
 - Cada endpoint exige su permiso en el servidor; ocultar botones en la pantalla no basta ni se usa como control. Los costos de compra solo los recibe quien tiene `COSTS_VIEW`.
 - Un administrador no puede desactivarse ni quitarse el rol a sí mismo, y siempre debe quedar al menos un administrador activo. Dar o quitar permisos, cambiar el rol y activar o desactivar cuentas queda en la auditoría.
 - Cualquier usuario puede cambiar su propia contraseña; el administrador puede restablecer la de otra persona de su sucursal.
+
+## Negocio configurable, módulos y n8n
+
+El mismo sistema sirve para una farmacia, una tienda u otro comercio: en **Configuración** el administrador cambia el nombre, el tipo de negocio y el color, y prende o apaga módulos (hoy Caja, Auditoría y Farmacia: recetas y controlados). Un módulo apagado quita sus pantallas y permisos para todos, incluido el administrador. Un negocio nuevo puede nacer ya configurado con `BUSINESS_NAME` y `BUSINESS_TYPE` (`FARMACIA`, `TIENDA` u `OTRO`), que solo se leen al crear la base.
+
+La conexión con n8n (avisos firmados de ventas, compras, stock bajo, vencimientos, cierres de caja y cambios de acceso, y llaves de API con permisos mínimos) está descrita en [INTEGRACION_N8N.md](INTEGRACION_N8N.md).

@@ -17,16 +17,22 @@ public class AdminBootstrap implements InitializingBean {
   private final JdbcTemplate db;
   private final PasswordEncoder encoder;
   private final String password;
+  private final String businessName;
+  private final String businessType;
   private final TransactionTemplate transaction;
 
   public AdminBootstrap(
       JdbcTemplate db,
       PasswordEncoder encoder,
       @Value("${app.bootstrap-password:}") String password,
+      @Value("${app.business.name:}") String businessName,
+      @Value("${app.business.type:}") String businessType,
       PlatformTransactionManager transactions) {
     this.db = db;
     this.encoder = encoder;
     this.password = password;
+    this.businessName = businessName.trim();
+    this.businessType = businessType.trim();
     this.transaction = new TransactionTemplate(transactions);
   }
 
@@ -53,6 +59,19 @@ public class AdminBootstrap implements InitializingBean {
           db.update(
               "INSERT INTO audit_logs(branch_id,actor,action,reference) VALUES"
                   + " (1,'SYSTEM','ADMIN_BOOTSTRAPPED','admin')");
+          // Un negocio nuevo puede nacer ya configurado (BUSINESS_NAME y BUSINESS_TYPE).
+          if (!businessName.isBlank()) {
+            if (businessName.length() < 2 || businessName.length() > 120)
+              throw new IllegalStateException("BUSINESS_NAME debe tener de 2 a 120 caracteres.");
+            db.update("UPDATE settings SET business_name=? WHERE id=1", businessName);
+          }
+          if (!businessType.isBlank()) {
+            var type = Modules.type(businessType.toUpperCase());
+            db.update("UPDATE settings SET business_type=? WHERE id=1", type.key());
+            db.update("DELETE FROM enabled_modules");
+            for (String m : type.modules())
+              db.update("INSERT INTO enabled_modules(module) VALUES (?)", m);
+          }
         });
   }
 }

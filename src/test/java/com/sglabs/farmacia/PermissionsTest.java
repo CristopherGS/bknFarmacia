@@ -41,6 +41,12 @@ class PermissionsTest {
     }
   }
 
+  /** Apaga la base al terminar la clase: siete PostgreSQL abiertos hacen lento el cierre de la JVM. */
+  @org.junit.jupiter.api.AfterAll
+  static void closeDatabase() throws Exception {
+    pg.close();
+  }
+
   @DynamicPropertySource
   static void database(DynamicPropertyRegistry r) {
     r.add("spring.datasource.url", () -> pg.getJdbcUrl("postgres", "postgres"));

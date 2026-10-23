@@ -15,9 +15,11 @@ import org.springframework.stereotype.Component;
 @Component("perm")
 public class Perm {
   private final JdbcTemplate db;
+  private final Settings settings;
 
-  public Perm(JdbcTemplate db) {
+  public Perm(JdbcTemplate db, Settings settings) {
     this.db = db;
+    this.settings = settings;
   }
 
   public boolean has(String key) {
@@ -27,7 +29,14 @@ public class Perm {
   /** Verdadero si el usuario activo tiene al menos uno de los permisos (ADMIN los tiene todos). */
   public boolean any(String... keys) {
     String name = current();
-    if (name == null || keys.length == 0) return false;
+    if (name == null) return false;
+    // Un módulo apagado deja sin efecto sus permisos, también para el administrador.
+    var modules = settings.get().modules();
+    keys =
+        Arrays.stream(keys)
+            .filter(k -> Permissions.moduleOf(k) == null || modules.contains(Permissions.moduleOf(k)))
+            .toArray(String[]::new);
+    if (keys.length == 0) return false;
     var args = new ArrayList<Object>();
     args.add(name);
     args.addAll(Arrays.asList(keys));
@@ -57,7 +66,10 @@ public class Perm {
     var role =
         db.queryForList("SELECT role FROM users WHERE username=? AND active", String.class, username);
     if (role.isEmpty()) return List.of();
-    if (role.getFirst().equals("ADMIN")) return List.copyOf(Permissions.KEYS);
+    var modules = settings.get().modules();
+    java.util.function.Predicate<String> usable =
+        k -> Permissions.moduleOf(k) == null || modules.contains(Permissions.moduleOf(k));
+    if (role.getFirst().equals("ADMIN")) return Permissions.KEYS.stream().filter(usable).toList();
     var granted =
         new HashSet<>(
             db.queryForList(
@@ -65,7 +77,7 @@ public class Perm {
                     + " u.username=?",
                 String.class,
                 username));
-    return Permissions.KEYS.stream().filter(granted::contains).toList();
+    return Permissions.KEYS.stream().filter(granted::contains).filter(usable).toList();
   }
 
   private static String current() {

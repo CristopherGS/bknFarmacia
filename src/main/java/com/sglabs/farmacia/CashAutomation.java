@@ -14,6 +14,13 @@ public class CashAutomation {
   private final JdbcTemplate db;
   private final boolean enabled;
   private final BigDecimal opening;
+  private Events events;
+
+  /** Spring lo inyecta; con instancias manuales (pruebas) no se emiten eventos. */
+  @org.springframework.beans.factory.annotation.Autowired(required = false)
+  void events(Events events) {
+    this.events = events;
+  }
 
   public CashAutomation(
       JdbcTemplate db,
@@ -67,6 +74,15 @@ public class CashAutomation {
           expected,
           id);
       audit(branch, "CASH_AUTO_CLOSED", id);
+      if (events != null && events.enabled())
+        events.emit(
+            "cash.closed",
+            id,
+            java.util.Map.of(
+                "sessionId", id,
+                "mode", "AUTOMATIC",
+                "opening", session.get("opening"),
+                "expected", expected));
     }
     if (local.toLocalTime().isBefore(LocalTime.of(6, 0))) return;
     var exists =
