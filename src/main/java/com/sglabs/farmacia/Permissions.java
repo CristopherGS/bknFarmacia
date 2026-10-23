@@ -22,6 +22,7 @@ public final class Permissions {
           new Def("COSTS_VIEW", "Inventario", "Ver costos de compra"),
           new Def("PURCHASES_VIEW", "Compras", "Ver las compras recibidas"),
           new Def("PURCHASES_RECEIVE", "Compras", "Registrar compras e ingresar existencias"),
+          new Def("INVOICES_IMPORT", "Compras", "Cargar facturas para leerlas automáticamente"),
           new Def("SUPPLIERS_VIEW", "Proveedores", "Ver proveedores"),
           new Def("SUPPLIERS_MANAGE", "Proveedores", "Crear proveedores"),
           new Def("AUDIT_VIEW", "Administración", "Ver la auditoría"));
@@ -52,6 +53,7 @@ public final class Permissions {
                   "COSTS_VIEW",
                   "PURCHASES_VIEW",
                   "PURCHASES_RECEIVE",
+                  "INVOICES_IMPORT",
                   "SUPPLIERS_VIEW",
                   "SUPPLIERS_MANAGE"),
           "ACCOUNTANT",
@@ -71,6 +73,7 @@ public final class Permissions {
           "CATALOG_MANAGE", List.of("CATALOG_VIEW"),
           "SUPPLIERS_MANAGE", List.of("SUPPLIERS_VIEW"),
           "PURCHASES_RECEIVE", List.of("PURCHASES_VIEW", "CATALOG_VIEW", "SUPPLIERS_VIEW"),
+          "INVOICES_IMPORT", List.of("PURCHASES_VIEW"),
           "CASH_MANAGE", List.of("CASH_VIEW"),
           "COSTS_VIEW", List.of("INVENTORY_VIEW"));
 

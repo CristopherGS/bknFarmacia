@@ -61,4 +61,4 @@ El administrador decide qué puede ver y hacer cada persona. El rol es solo una 
 
 El mismo sistema sirve para una farmacia, una tienda u otro comercio: en **Configuración** el administrador cambia el nombre, el tipo de negocio y el color, y prende o apaga módulos (hoy Caja, Auditoría y Farmacia: recetas y controlados). Un módulo apagado quita sus pantallas y permisos para todos, incluido el administrador. Un negocio nuevo puede nacer ya configurado con `BUSINESS_NAME` y `BUSINESS_TYPE` (`FARMACIA`, `TIENDA` u `OTRO`), que solo se leen al crear la base.
 
-La conexión con n8n (avisos firmados de ventas, compras, stock bajo, vencimientos, cierres de caja y cambios de acceso, y llaves de API con permisos mínimos) está descrita en [INTEGRACION_N8N.md](INTEGRACION_N8N.md).
+Las facturas de proveedores se pueden subir como foto o PDF: n8n las lee, el sistema las cruza con el catálogo y una persona confirma el borrador antes de que entre al inventario. La conexión con n8n (avisos firmados de ventas, compras, stock bajo, vencimientos, cierres de caja y cambios de acceso, y llaves de API con permisos mínimos) está descrita en [INTEGRACION_N8N.md](INTEGRACION_N8N.md).
