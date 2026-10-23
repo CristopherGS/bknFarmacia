@@ -37,18 +37,32 @@ public class SecurityConfig {
   }
 
   @Bean
-  SecurityFilterChain security(HttpSecurity http) throws Exception {
+  SecurityFilterChain security(HttpSecurity http, JdbcTemplate db) throws Exception {
     var csrf = CookieCsrfTokenRepository.withHttpOnlyFalse();
     csrf.setCookieCustomizer(c -> c.sameSite("Strict").path("/"));
-    return http.csrf(
+    return http.addFilterAfter(
+            new ApiKeyFilter(db),
+            org.springframework.security.web.context.SecurityContextHolderFilter.class)
+        .addFilterAfter(new ActiveUserFilter(db), ApiKeyFilter.class)
+        .csrf(
             c ->
-                c.csrfTokenRepository(csrf)
+                // Las llaves de API van en un encabezado que un navegador no adjunta solo: no hay
+                // riesgo CSRF, y un ataque con una llave inválida se rechaza con 401.
+                c.ignoringRequestMatchers(ApiKeyFilter::usesKey)
+                    .csrfTokenRepository(csrf)
                     .csrfTokenRequestHandler(
                         new org.springframework.security.web.csrf
                             .CsrfTokenRequestAttributeHandler()))
         .authorizeHttpRequests(
             a ->
-                a.requestMatchers("/actuator/health", "/actuator/health/**", "/api/v1/auth/csrf")
+                a.requestMatchers(
+                        "/actuator/health",
+                        "/actuator/health/**",
+                        "/api/v1/auth/csrf",
+                        "/api/v1/settings/public",
+                        // Tomcat redirige los errores (403, 404…) a /error; sin esto, quien se
+                        // autentica con llave de API (sin sesión) vería 401 en lugar del 403 real.
+                        "/error")
                     .permitAll()
                     .anyRequest()
                     .authenticated())

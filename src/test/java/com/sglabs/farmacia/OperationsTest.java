@@ -254,11 +254,29 @@ class OperationsTest {
     assertThat(quantity()).isEqualTo(20);
   }
 
+  /** Crea (o restablece) un usuario real con los permisos de la plantilla de su rol. */
+  String addUser(String username, String role, long branch) {
+    db.update("INSERT INTO branches(id,name) VALUES(2,'Prueba aislada') ON CONFLICT DO NOTHING");
+    db.update(
+        "INSERT INTO users(username,password_hash,role,branch_id) VALUES(?,'unused-test-hash',?,?)"
+            + " ON CONFLICT (username) DO UPDATE SET role=EXCLUDED.role, active=TRUE,"
+            + " branch_id=EXCLUDED.branch_id",
+        username,
+        role,
+        branch);
+    long id = db.queryForObject("SELECT id FROM users WHERE username=?", Long.class, username);
+    db.update("DELETE FROM user_permissions WHERE user_id=?", id);
+    if (!role.equals("ADMIN"))
+      for (String k : Permissions.preset(role))
+        db.update("INSERT INTO user_permissions(user_id,permission) VALUES(?,?)", id, k);
+    return username;
+  }
+
   @Test
   void cashierCannotCreateProductsAndCsrfIsRequired() throws Exception {
     mvc.perform(
             post("/api/v1/products")
-                .with(user("admin").roles("CASHIER"))
+                .with(user(addUser("cajero", "CASHIER", 1)))
                 .with(csrf())
                 .contentType("application/json")
                 .content(
@@ -307,11 +325,7 @@ class OperationsTest {
     var sale =
         op.checkout(checkout(tablet, 1, "2.50", "2.50"), UUID.randomUUID().toString(), "admin");
     db.update("INSERT INTO branches(id,name) VALUES(2,'Prueba aislada') ON CONFLICT DO NOTHING");
-    db.update(
-        "INSERT INTO users(username,password_hash,role,branch_id) VALUES('other',?,'CASHIER',2) ON"
-            + " CONFLICT DO NOTHING",
-        "unused-test-hash");
-    mvc.perform(get("/api/v1/sales/" + sale.get("id")).with(user("other").roles("CASHIER")))
+    mvc.perform(get("/api/v1/sales/" + sale.get("id")).with(user(addUser("other", "CASHIER", 2))))
         .andExpect(status().isNotFound());
   }
 
