@@ -27,6 +27,11 @@ interface HttpFetcher {
       headers.forEach(b::header);
       HttpRequest request = b.build();
       long started = System.nanoTime();
+      LOG.info(
+          "HTTP saliente iniciado: método={}, destino={}, timeoutMs=20000, connectTimeoutMs=8000, bytesEnviados={}",
+          request.method(),
+          com.sglabs.farmacia.HttpTrace.target(request.uri()),
+          request.bodyPublisher().map(p -> p.contentLength()).orElse(0L));
       try {
         var r = client.send(request, HttpResponse.BodyHandlers.ofString());
         long elapsedMs = (System.nanoTime() - started) / 1_000_000;
@@ -43,19 +48,21 @@ interface HttpFetcher {
       } catch (InterruptedException e) {
         Thread.currentThread().interrupt();
         LOG.error(
-            "HTTP saliente interrumpido: método={}, host={}, ruta={}",
+            "HTTP saliente interrumpido: método={}, destino={}, duraciónMs={}, excepción={}",
             request.method(),
             com.sglabs.farmacia.HttpTrace.target(request.uri()),
-            request.uri().getRawPath());
+            (System.nanoTime() - started) / 1_000_000,
+            com.sglabs.farmacia.HttpTrace.exception(e),
+            e);
         throw new IOException("Interrumpido", e);
       } catch (IOException e) {
         LOG.error(
-            "HTTP saliente fallido: método={}, host={}, ruta={}, tipo={}, mensaje={}",
+            "HTTP saliente fallido: método={}, destino={}, duraciónMs={}, excepción={}",
             request.method(),
             com.sglabs.farmacia.HttpTrace.target(request.uri()),
-            request.uri().getRawPath(),
-            e.getClass().getSimpleName(),
-            e.getMessage());
+            (System.nanoTime() - started) / 1_000_000,
+            com.sglabs.farmacia.HttpTrace.exception(e),
+            e);
         throw e;
       }
     }
