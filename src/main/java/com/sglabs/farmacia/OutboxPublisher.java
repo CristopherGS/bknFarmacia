@@ -187,7 +187,14 @@ public class OutboxPublisher {
             .build();
     var response = http.send(request, HttpResponse.BodyHandlers.discarding());
     int code = response.statusCode();
-    LOG.debug("Respuesta del webhook n8n: id={}, tipo={}, status={}", id, type, code);
+    LOG.info(
+        "HTTP saliente n8n: método=POST, host={}, ruta={}, eventoId={}, tipo={}, status={}, bytesEnviados={}",
+        HttpTrace.target(URI.create(s.webhookUrl())),
+        URI.create(s.webhookUrl()).getRawPath(),
+        id,
+        type,
+        code,
+        body.getBytes(StandardCharsets.UTF_8).length);
     return code / 100 == 2 ? new Result(true, code, "") : new Result(false, code, "HTTP " + code);
   }
 
