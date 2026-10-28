@@ -11,6 +11,8 @@ import java.time.format.DateTimeParseException;
 import java.util.*;
 import org.springframework.http.*;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
@@ -24,6 +26,8 @@ import org.springframework.web.multipart.MultipartFile;
 @RestController
 @RequestMapping("/api/v1/receipts/drafts")
 public class InvoiceDraftsController {
+  private static final Logger LOG = LoggerFactory.getLogger(InvoiceDraftsController.class);
+
   static final int MAX_BYTES = 8 * 1024 * 1024;
   static final int MAX_OPEN_DRAFTS = 50;
 
@@ -117,6 +121,12 @@ public class InvoiceDraftsController {
             "uploadedBy", p.getName(),
             "filePath", "/api/v1/receipts/drafts/" + id + "/file",
             "extractionPath", "/api/v1/receipts/drafts/" + id + "/extraction"));
+    LOG.info(
+        "Factura enviada a n8n: draftId={}, tipo={}, bytes={}, usuario={}",
+        id,
+        type,
+        bytes.length,
+        p.getName());
     return Map.of("id", id, "status", "PENDING");
   }
 
@@ -183,6 +193,7 @@ public class InvoiceDraftsController {
           id);
       op.audit(branch, p.getName(), "INVOICE_READ_FAILED", Long.toString(id));
       events.emit("invoice.failed", id, Map.of("draftId", id, "error", x.error().trim()));
+      LOG.warn("n8n no pudo leer factura: draftId={}, motivo={}", id, x.error().trim());
       return Map.of("ok", true, "status", "FAILED");
     }
     if (x.lines() == null || x.lines().isEmpty())
@@ -237,6 +248,12 @@ public class InvoiceDraftsController {
         "invoice.ready",
         id,
         Map.of("draftId", id, "lines", x.lines().size(), "matched", matched, "supplierMatched", supplier != null));
+    LOG.info(
+        "Extracción de factura recibida desde n8n: draftId={}, líneas={}, coincidencias={}, proveedorCoincide={}",
+        id,
+        x.lines().size(),
+        matched,
+        supplier != null);
     return Map.of("ok", true, "status", "READY", "lines", x.lines().size(), "matched", matched);
   }
 
