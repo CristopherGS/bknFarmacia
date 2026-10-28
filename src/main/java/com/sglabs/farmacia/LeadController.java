@@ -49,7 +49,7 @@ public class LeadController {
       var response =
           HttpClient.newBuilder()
               .version(HttpClient.Version.HTTP_1_1)
-              .connectTimeout(Duration.ofSeconds(3))
+              .connectTimeout(Duration.ofMillis(3000))
               .build()
               .send(request, HttpResponse.BodyHandlers.ofString());
       long elapsedMs = (System.nanoTime() - started) / 1_000_000;
