@@ -33,28 +33,51 @@ public class LeadController {
           HttpStatus.SERVICE_UNAVAILABLE, "Contact service is not configured");
     }
     long started = System.nanoTime();
+    URI destination;
     try {
-      var request = HttpRequest.newBuilder(URI.create(webhook)).timeout(Duration.ofSeconds(8))
+      destination = URI.create(webhook);
+      byte[] body = mapper.writeValueAsBytes(lead);
+      LOG.info(
+          "HTTP saliente iniciado: método=POST, destino={}, timeoutMs=8000, connectTimeoutMs=3000, bytesEnviados={}",
+          HttpTrace.target(destination),
+          body.length);
+      var request = HttpRequest.newBuilder(destination).timeout(Duration.ofSeconds(8))
           .header("Content-Type", "application/json")
-          .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(lead))).build();
-      var response = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build().send(request, HttpResponse.BodyHandlers.discarding());
+          .POST(HttpRequest.BodyPublishers.ofByteArray(body)).build();
+      var response =
+          HttpClient.newBuilder()
+              .connectTimeout(Duration.ofSeconds(3))
+              .build()
+              .send(request, HttpResponse.BodyHandlers.discarding());
       long elapsedMs = (System.nanoTime() - started) / 1_000_000;
       LOG.info(
-          "HTTP saliente: método=POST, host={}, ruta={}, status={}, duraciónMs={}, bytesEnviados={}",
-          HttpTrace.target(URI.create(webhook)),
-          response.uri().getPath(),
+          "HTTP saliente completado: método=POST, destino={}, status={}, duraciónMs={}, bytesEnviados={}",
+          HttpTrace.target(destination),
           response.statusCode(),
           elapsedMs,
-          mapper.writeValueAsBytes(lead).length);
+          body.length);
       if (response.statusCode() < 200 || response.statusCode() >= 300) {
         throw new IllegalStateException("HTTP " + response.statusCode());
       }
       return Map.of("ok", true);
     } catch (Exception e) {
       if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-      LOG.error("Error enviando lead al webhook: tipo={}, mensaje={}", e.getClass().getSimpleName(), e.getMessage());
+      LOG.error(
+          "HTTP saliente fallido: método=POST, destino={}, duraciónMs={}, excepción={}",
+          safeTarget(webhook),
+          (System.nanoTime() - started) / 1_000_000,
+          HttpTrace.exception(e),
+          e);
       throw new ResponseStatusException(
           HttpStatus.BAD_GATEWAY, "Contact service unavailable", e);
+    }
+  }
+
+  private static String safeTarget(String value) {
+    try {
+      return HttpTrace.target(URI.create(value));
+    } catch (RuntimeException e) {
+      return "<URL inválida>";
     }
   }
 }

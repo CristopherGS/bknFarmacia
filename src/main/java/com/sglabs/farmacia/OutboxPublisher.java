@@ -119,6 +119,13 @@ public class OutboxPublisher {
           fail(id, attempts, result.error());
         }
       } catch (Exception e) {
+        LOG.error(
+            "Error procesando evento n8n: id={}, tipo={}, intento={}, excepción={}",
+            id,
+            row.get("event_type"),
+            attempts,
+            HttpTrace.exception(e),
+            e);
         fail(id, attempts, e.getClass().getSimpleName() + ": " + e.getMessage());
       }
     }
@@ -175,8 +182,16 @@ public class OutboxPublisher {
     envelope.set("data", data);
     String body = json.writeValueAsString(envelope);
     long ts = Instant.now().getEpochSecond();
+    URI destination = URI.create(s.webhookUrl());
+    LOG.info(
+        "HTTP saliente n8n iniciado: método=POST, destino={}, eventoId={}, tipo={}, timeoutMs=8000, bytesEnviados={}",
+        HttpTrace.target(destination),
+        id,
+        type,
+        body.getBytes(StandardCharsets.UTF_8).length);
+    long started = System.nanoTime();
     var request =
-        HttpRequest.newBuilder(URI.create(s.webhookUrl()))
+        HttpRequest.newBuilder(destination)
             .timeout(Duration.ofSeconds(8))
             .header("Content-Type", "application/json")
             .header("User-Agent", "SG-Suite-Webhook/1")
@@ -188,12 +203,12 @@ public class OutboxPublisher {
     var response = http.send(request, HttpResponse.BodyHandlers.discarding());
     int code = response.statusCode();
     LOG.info(
-        "HTTP saliente n8n: método=POST, host={}, ruta={}, eventoId={}, tipo={}, status={}, bytesEnviados={}",
-        HttpTrace.target(URI.create(s.webhookUrl())),
-        URI.create(s.webhookUrl()).getRawPath(),
+        "HTTP saliente n8n completado: método=POST, destino={}, eventoId={}, tipo={}, status={}, duraciónMs={}, bytesEnviados={}",
+        HttpTrace.target(destination),
         id,
         type,
         code,
+        (System.nanoTime() - started) / 1_000_000,
         body.getBytes(StandardCharsets.UTF_8).length);
     return code / 100 == 2 ? new Result(true, code, "") : new Result(false, code, "HTTP " + code);
   }

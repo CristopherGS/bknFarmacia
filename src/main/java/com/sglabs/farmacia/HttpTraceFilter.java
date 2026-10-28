@@ -22,6 +22,16 @@ class HttpTraceFilter extends OncePerRequestFilter {
     long started = System.nanoTime();
     try {
       chain.doFilter(request, response);
+    } catch (ServletException | IOException | RuntimeException e) {
+      LOG.error(
+          "HTTP entrante con excepción: método={}, ruta={}, host={}, duraciónMs={}, excepción={}",
+          request.getMethod(),
+          request.getRequestURI(),
+          request.getServerName(),
+          (System.nanoTime() - started) / 1_000_000,
+          HttpTrace.exception(e),
+          e);
+      throw e;
     } finally {
       long elapsedMs = (System.nanoTime() - started) / 1_000_000;
       LOG.info(
