@@ -49,6 +49,7 @@ public class SecurityConfig {
                 // Las llaves de API van en un encabezado que un navegador no adjunta solo: no hay
                 // riesgo CSRF, y un ataque con una llave inválida se rechaza con 401.
                 c.ignoringRequestMatchers(ApiKeyFilter::usesKey)
+                    .ignoringRequestMatchers("/api/v1/public/leads")
                     .csrfTokenRepository(csrf)
                     .csrfTokenRequestHandler(
                         new org.springframework.security.web.csrf
@@ -56,6 +57,7 @@ public class SecurityConfig {
         .authorizeHttpRequests(
             a ->
                 a.requestMatchers(
+                        "/api/v1/public/leads",
                         "/actuator/health",
                         "/actuator/health/**",
                         "/api/v1/auth/csrf",
