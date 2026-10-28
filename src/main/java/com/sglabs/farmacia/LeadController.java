@@ -9,6 +9,8 @@ import java.util.Map;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.*;
@@ -26,7 +28,7 @@ public class LeadController {
               @NotBlank @Size(max=100) String project, @NotBlank @Size(max=2000) String message,
               @Size(max=100) String estimate, @Pattern(regexp="es|en") String language) {}
   @PostMapping
-  Map<String, Boolean> submit(@Valid @RequestBody Lead lead) {
+  ResponseEntity<?> submit(@Valid @RequestBody Lead lead) {
     if (webhook.isBlank()) {
       LOG.error("Lead webhook no configurado; no se puede enviar la consulta");
       throw new ResponseStatusException(
@@ -46,20 +48,24 @@ public class LeadController {
           .POST(HttpRequest.BodyPublishers.ofByteArray(body)).build();
       var response =
           HttpClient.newBuilder()
-              .connectTimeout(Duration.ofSeconds(3))
+              .version(HttpClient.Version.HTTP_1_1)
+              .connectTimeout(Duration.ofMillis(3000))
               .build()
-              .send(request, HttpResponse.BodyHandlers.discarding());
+              .send(request, HttpResponse.BodyHandlers.ofString());
       long elapsedMs = (System.nanoTime() - started) / 1_000_000;
       LOG.info(
-          "HTTP saliente completado: método=POST, destino={}, status={}, duraciónMs={}, bytesEnviados={}",
+          "HTTP saliente completado: método=POST, destino={}, status={}, duraciónMs={}, bytesEnviados={}, bytesRecibidos={}, respuesta={}",
           HttpTrace.target(destination),
           response.statusCode(),
           elapsedMs,
-          body.length);
+          body.length,
+          response.body().getBytes(java.nio.charset.StandardCharsets.UTF_8).length,
+          preview(response.body()));
       if (response.statusCode() < 200 || response.statusCode() >= 300) {
-        throw new IllegalStateException("HTTP " + response.statusCode());
+        throw new IllegalStateException(
+            "HTTP " + response.statusCode() + " respuesta=" + preview(response.body()));
       }
-      return Map.of("ok", true);
+      return responseBody(response);
     } catch (Exception e) {
       if (e instanceof InterruptedException) Thread.currentThread().interrupt();
       LOG.error(
@@ -79,5 +85,28 @@ public class LeadController {
     } catch (RuntimeException e) {
       return "<URL inválida>";
     }
+  }
+
+  private ResponseEntity<?> responseBody(HttpResponse<String> response) {
+    String contentType = response.headers().firstValue("Content-Type").orElse("");
+    String body = response.body() == null ? "" : response.body().trim();
+    if (body.isEmpty()) return ResponseEntity.ok(Map.of("ok", true));
+    try {
+      var jsonBody = mapper.readTree(body);
+      if (jsonBody != null && !jsonBody.isTextual()) {
+        return ResponseEntity.ok().contentType(MediaType.APPLICATION_JSON).body(jsonBody);
+      }
+    } catch (Exception e) {
+      if (contentType.toLowerCase().contains(MediaType.APPLICATION_JSON_VALUE)) {
+        LOG.warn("n8n respondió Content-Type JSON inválido: {}", e.getMessage());
+      }
+    }
+    return ResponseEntity.ok().contentType(MediaType.TEXT_PLAIN).body(body);
+  }
+
+  private static String preview(String body) {
+    if (body == null || body.isBlank()) return "<vacía>";
+    String compact = body.replaceAll("\\s+", " ").trim();
+    return compact.length() > 1000 ? compact.substring(0, 1000) + "…" : compact;
   }
 }
