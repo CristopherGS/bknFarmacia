@@ -39,7 +39,13 @@ public class LeadController {
           .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(lead))).build();
       var response = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build().send(request, HttpResponse.BodyHandlers.discarding());
       long elapsedMs = (System.nanoTime() - started) / 1_000_000;
-      LOG.info("Lead enviado al webhook: status={}, duraciónMs={}", response.statusCode(), elapsedMs);
+      LOG.info(
+          "HTTP saliente: método=POST, host={}, ruta={}, status={}, duraciónMs={}, bytesEnviados={}",
+          HttpTrace.target(URI.create(webhook)),
+          response.uri().getPath(),
+          response.statusCode(),
+          elapsedMs,
+          mapper.writeValueAsBytes(lead).length);
       if (response.statusCode() < 200 || response.statusCode() >= 300) {
         throw new IllegalStateException("HTTP " + response.statusCode());
       }
