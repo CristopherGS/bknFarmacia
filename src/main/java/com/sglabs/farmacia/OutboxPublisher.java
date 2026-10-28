@@ -87,6 +87,9 @@ public class OutboxPublisher {
                 + " status='PENDING' AND next_attempt_at<=CURRENT_TIMESTAMP ORDER BY id LIMIT 20 FOR"
                 + " UPDATE SKIP LOCKED) RETURNING id,event_type,payload::text AS payload,attempts,"
                 + "created_at");
+    if (!rows.isEmpty()) {
+      LOG.info("Procesando {} evento(s) pendientes para n8n", rows.size());
+    }
     int delivered = 0;
     for (var row : rows) {
       long id = ((Number) row.get("id")).longValue();
@@ -106,6 +109,12 @@ public class OutboxPublisher {
                   + " WHERE id=?",
               id);
           delivered++;
+          LOG.info(
+              "Evento n8n entregado: id={}, tipo={}, intento={}, status={}",
+              id,
+              row.get("event_type"),
+              attempts,
+              result.status());
         } else {
           fail(id, attempts, result.error());
         }
@@ -123,6 +132,12 @@ public class OutboxPublisher {
       db.update("UPDATE outbox_events SET status='FAILED',last_error=? WHERE id=?", shortError, id);
     } else {
       long wait = Math.min(3600, backoffSeconds << (attempts - 1));
+      LOG.warn(
+          "Evento n8n falló: id={}, intento={}, próximoIntentoEn={}s, causa={}",
+          id,
+          attempts,
+          wait,
+          shortError);
       db.update(
           "UPDATE outbox_events SET last_error=?,next_attempt_at=CURRENT_TIMESTAMP + (? * interval"
               + " '1 second') WHERE id=?",
@@ -138,8 +153,14 @@ public class OutboxPublisher {
     if (!s.webhookConfigured()) return new Result(false, 0, "Falta la URL o el secreto del webhook.");
     var data = json.createObjectNode().put("message", "Prueba de conexión desde " + s.name());
     try {
-      return post(s, 0, "test.ping", Instant.now(), data);
+      var result = post(s, 0, "test.ping", Instant.now(), data);
+      LOG.info("Prueba de webhook n8n: status={}, ok={}", result.status(), result.ok());
+      return result;
     } catch (Exception e) {
+      LOG.error(
+          "Error en prueba de webhook n8n: tipo={}, mensaje={}",
+          e.getClass().getSimpleName(),
+          e.getMessage());
       return new Result(false, 0, e.getClass().getSimpleName() + ": " + e.getMessage());
     }
   }
@@ -166,6 +187,7 @@ public class OutboxPublisher {
             .build();
     var response = http.send(request, HttpResponse.BodyHandlers.discarding());
     int code = response.statusCode();
+    LOG.debug("Respuesta del webhook n8n: id={}, tipo={}, status={}", id, type, code);
     return code / 100 == 2 ? new Result(true, code, "") : new Result(false, code, "HTTP " + code);
   }
 
